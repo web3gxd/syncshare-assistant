@@ -1,0 +1,37 @@
+name: Проверка расширения
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Тесты и установочный архив
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходники
+        uses: actions/checkout@v4
+      - name: Подготовить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Подготовить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Проверить расширение
+        run: npm test
+      - name: Собрать установочный архив
+        run: python scripts/package.py
+      - name: Сохранить установочный архив
+        uses: actions/upload-artifact@v4
+        with:
+          name: syncshare-assistant
+          path: dist/*.zip
+          retention-days: 14
+

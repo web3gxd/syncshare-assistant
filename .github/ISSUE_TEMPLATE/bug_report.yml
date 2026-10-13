@@ -1,0 +1,29 @@
+name: Ошибка в расширении
+description: Сообщить о сбое или неправильном поведении
+title: '[Ошибка] '
+labels: ['ошибка']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Что произошло
+      description: Опишите проблему без персональных данных и содержимого аккаунта.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      description: Укажите действия и ожидаемый результат.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия расширения и Chrome
+  - type: textarea
+    id: message
+    attributes:
+      label: Сообщение об ошибке
+      description: Не прикладывайте cookies, токены, пароли или полные ссылки с номером попытки.
+

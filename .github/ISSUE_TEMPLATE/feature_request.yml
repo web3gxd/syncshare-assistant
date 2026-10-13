@@ -1,0 +1,13 @@
+name: Предложение по улучшению
+description: Предложить изменение интерфейса или поведения
+title: '[Улучшение] '
+labels: ['улучшение']
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Что нужно изменить
+      description: Опишите задачу и желаемое поведение.
+    validations:
+      required: true
+
