@@ -1,6 +1,6 @@
 # SyncShare — помощник для Chrome
 
-<p><img src="assets/logo.png" alt="Логотип SyncShare — помощник" width="112"></p>
+<p><img src="icons/icon-128.png" alt="Логотип SyncShare — помощник" width="112"></p>
 
 **Версия 1.2.1 · Manifest V3 · интерфейс на русском языке**
 
