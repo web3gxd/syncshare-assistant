@@ -98,12 +98,15 @@ async function simulate(code, config = {}) {
     const warningBox = {textContent:'Internal state: trying to solve several quizzes at the same time',
       querySelectorAll:()=>[warningButton]};
     const warningHeading = {textContent:config.otherDialog ? 'Unrelated warning' : 'SyncShare: Critical Error',parentElement:warningBox};
+    const matchingQuestions = selector => qs.filter((q,index) => selector.split(',').some(part =>
+      part.trim().split(/\s/)[0] === '.que.' + (questions[index].questionType || 'multichoice')));
     const doc = {readyState: 'complete', body: {menus, click: () => menus.forEach(menu => {menu.visible = false;})},
       getElementById: id => controls.get(id) || labels.get(id),
       querySelectorAll: selector => selector === 'h1,h2,h3,h4,h5,h6'
-        ? config.dialog && !dismissed ? [warningHeading] : [] : qs,
-      querySelector: selector => selector.includes('.que:not(.multichoice)') && config.unsupported ? {} : ({
-        '.que.multichoice': qs[0],
+        ? config.dialog && !dismissed ? [warningHeading] : [] : matchingQuestions(selector),
+      querySelector: selector => selector.includes('.que:not(.multichoice)') &&
+        (config.unsupported || (config.guardSetReload && !selector.includes(':not(.multichoiceset)'))) ? {} :
+        selector.startsWith('.que.') ? (selector.endsWith(' .qno') ? matchingQuestions(selector)[0]?.querySelector('.qno') : matchingQuestions(selector)[0]) : ({
         'input[name="thispage"]': {value: String(page)},
         'input[name="nextpage"]': {value: String(page + 1)},
         '#mod_quiz-next-nav': next
@@ -149,7 +152,7 @@ async function simulate(code, config = {}) {
       error: (...args) => errors.push(args), table: () => {}}};
   await runInNewContext(code.replace('const DRY_RUN = false;', `const DRY_RUN = ${config.live ? 'false' : 'true'};`)
     .replace('startNow = false',config.ready?'startNow = false':'startNow = true'), context);
-  const checked = docs[current].querySelectorAll('.que.multichoice').flatMap(q=>q.querySelectorAll('.answer input'))
+  const checked = docs[current].querySelectorAll('.que.multichoice,.que.multichoiceset').flatMap(q=>q.querySelectorAll('.answer input'))
     .filter(input=>input.checked).map(input=>input.id);
   return {state: window.__syncShareController, selected, opens, submits, records, errors, notices, dismissed,reloads,checked,checkpoints};
 }
@@ -266,5 +269,27 @@ async function simulate(code, config = {}) {
   assert.ok(newDocument.checked.includes('0-0'));
   assert.ok(reload.checkpoints.some(save=>save.run && save.pending),'Запись снимка до reload');
   assert.ok(live.checkpoints.some(save=>save.run),'Запись намерения продолжить до перехода');
+  const mixedTypes = await simulate(source,{live:true,pages:[[
+    {label:'Обычный вопрос',count:10},
+    {...checkboxData,questionType:'multichoiceset'},
+    {label:'Последний вопрос',count:20}
+  ]]});
+  assert.equal(mixedTypes.errors.length,0);
+  assert.equal(mixedTypes.state.report.length,3,'multichoiceset нельзя молча исключать из обработки');
+  assert.equal(mixedTypes.state.report[1].kind,'checkbox');
+  assert.equal(mixedTypes.state.report[1].selected,3);
+  assert.equal(mixedTypes.state.pageTotal,3);
+  const onlySet = await simulate(source,{live:true,pages:[[{...checkboxData,questionType:'multichoiceset'}]]});
+  assert.equal(onlySet.errors.length,0,'Страница только с multichoiceset должна загружаться');
+  assert.equal(onlySet.state.report[0].selected,3);
+  const reloadSet = await simulate(source,{live:true,guardSetReload:true,pages:[[
+    {...checkboxData,questionType:'multichoiceset'},
+    {label:'После перезагрузки',count:20,noAnswer:true}
+  ]]});
+  assert.equal(reloadSet.errors.length,0,'multichoiceset поддерживается при перезагрузке');
+  assert.equal(reloadSet.reloads,1);
+  assert.equal(reloadSet.state.report.length,2);
+  assert.ok(reloadSet.checked.includes('0-0-0') && reloadSet.checked.includes('0-0-1') && reloadSet.checked.includes('0-0-3'));
+  assert.ok(!reloadSet.checked.includes('0-0-2'));
   console.log('Проверены: загрузка, восстановление после reload без потери радио/чекбоксов, предел перезагрузок, Старт, пауза, случайная задержка, Got it, исторические варианты, несколько ответов, красная пара и переходы.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

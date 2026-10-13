@@ -1,4 +1,5 @@
 (async function syncShareRun(startNow = false) {
+  const QUESTION_SELECTOR = '.que.multichoice,.que.multichoiceset';
   const DRY_RUN = false; // true: проверить текущую страницу без выбора ответов
   if (!window.chrome?.dom?.openOrClosedShadowRoot) {
     throw new Error('Chrome не предоставляет доступ к элементам SyncShare.');
@@ -179,7 +180,7 @@
           return false;
         }
         if (lastRoute === 'attempt' && (!shadow(doc.body) ||
-            !doc.querySelector('.que.multichoice') || !doc.querySelector('input[name="thispage"]'))) return false;
+            !doc.querySelector(QUESTION_SELECTOR) || !doc.querySelector('input[name="thispage"]'))) return false;
         if (doc !== stableDoc) { stableDoc = doc; stableSince = Date.now(); }
         return Date.now() - stableSince >= 750 && {doc, finished: lastRoute === 'summary'};
       }, 60000, 'загрузка страницы теста');
@@ -217,7 +218,7 @@
     .some(menu => menu.getClientRects?.().length && /\bNo answers? yet\b/i.test(menu.textContent || ''));
   const capturePage = doc => ({
     page:doc.querySelector('input[name="thispage"]')?.value,
-    controls:[...doc.querySelectorAll('.que.multichoice')].flatMap(question =>
+    controls:[...doc.querySelectorAll(QUESTION_SELECTOR)].flatMap(question =>
       [...question.querySelectorAll('.answer input[type="radio"],.answer input[type="checkbox"]')]
         .filter(input => ['radio','checkbox'].includes(input.type)).map(input => ({
           id:input.id, question:question.id, type:input.type, checked:input.checked,
@@ -267,7 +268,7 @@
     if (work.document !== doc || classifyURL(work.location.href,initialURL) !== 'attempt') {
       throw new Error('Страница изменилась. Перезагрузка отменена.');
     }
-    if (doc.querySelector('.que:not(.multichoice) textarea,.que:not(.multichoice) select,.que:not(.multichoice) input:not([type="hidden"])')) {
+    if (doc.querySelector('.que:not(.multichoice):not(.multichoiceset) textarea,.que:not(.multichoice):not(.multichoiceset) select,.que:not(.multichoice):not(.multichoiceset) input:not([type="hidden"])')) {
       throw new Error('На странице есть неподдерживаемые поля. Автоперезагрузка отменена, чтобы не потерять ответы.');
     }
     const snapshot = capturePage(doc);
@@ -505,9 +506,9 @@
       const doc = loaded.doc;
       if (state.pendingRestore) await restorePage(doc);
       state.page = doc.querySelector('input[name="thispage"]')?.value;
-      state.pageTotal = doc.querySelectorAll('.que.multichoice').length;
+      state.pageTotal = doc.querySelectorAll(QUESTION_SELECTOR).length;
       state.pageDone = 0;
-      state.currentQuestion = text(doc.querySelector('.que.multichoice .qno')?.textContent);
+      state.currentQuestion = text(doc.querySelector(QUESTION_SELECTOR)?.querySelector('.qno')?.textContent);
       state.status = 'ready';
       state.stage = 'Нажмите Старт. Диапазон задержки можно настроить ниже.';
       paint();
@@ -527,10 +528,10 @@
       if (page === undefined || visited.has(page)) throw new Error('Не удалось определить новую страницу.');
       visited.add(page);
       state.page = page;
-      state.pageTotal = doc.querySelectorAll('.que.multichoice').length;
+      state.pageTotal = doc.querySelectorAll(QUESTION_SELECTOR).length;
       state.pageDone = 0;
       note('Открыта страница ' + (Number(page) + 1));
-      const questions = [...doc.querySelectorAll('.que.multichoice')];
+      const questions = [...doc.querySelectorAll(QUESTION_SELECTOR)];
       const resumeAt = state.resumeQuestionId ? questions.findIndex(question => question.id === state.resumeQuestionId) : 0;
       if (resumeAt < 0) throw new Error('Не удалось найти вопрос для продолжения после перезагрузки.');
       state.resumeQuestionId = null;
