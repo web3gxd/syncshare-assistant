@@ -35,6 +35,18 @@ assert.equal(delay(4,6,()=>0.5),5000);
 assert.equal(delay(6,4,()=>0.5),5000);
 assert.equal(delay(NaN,6,()=>0.5),5000);
 
+const localeBlock = source.match(/\/\/ BEGIN SYNC SHARE LOCALE([\s\S]*?)\/\/ END SYNC SHARE LOCALE/);
+assert.ok(localeBlock);
+const locale = runInNewContext(localeBlock[1]+'\n({isStatisticsLabel,parseBooleanLabel,isNoAnswersText})');
+for (const value of ['Submissions','Statistics','Статистика','  СТАТИСТИКА\u00a0']) assert.equal(locale.isStatisticsLabel(value),true);
+for (const value of ['Рекомендации','Recommendations','Статистика рекомендаций']) assert.equal(locale.isStatisticsLabel(value),false);
+for (const value of ['True','Истина','Верно','Да']) assert.equal(locale.parseBooleanLabel(value),true);
+for (const value of ['False','Ложь','Неверно','Нет']) assert.equal(locale.parseBooleanLabel(value),false);
+assert.equal(locale.parseBooleanLabel('Возможно'),null);
+for (const value of ['No answer yet','No answers yet','Ответов пока нет','Пока нет ответа','Ответов ещё нет','Статистика Пока нет ответов']) assert.equal(locale.isNoAnswersText(value),true,value);
+for (const value of ['Статистика 119','Ответов пока неточно 20','ответ найден']) assert.equal(locale.isNoAnswersText(value),false,value);
+console.log('Русские и английские подписи SyncShare: проверено.');
+
 async function simulate(code, config = {}) {
   let now = 0, selected = [], opens = 0, submits = 0, dismissed = 0, pauseApplied = false, reloads = 0;
   const checkpoints = [];
@@ -59,9 +71,9 @@ async function simulate(code, config = {}) {
           const rows = box.rows.map(option => {
             const badge = {textContent:String(option.count),red:option.red};
             return {querySelector: selector => selector.includes('item-label')
-              ? {textContent:String(option.value)} : badge, querySelectorAll: () => [badge]};
+              ? {textContent:config.booleanLabels?.[String(option.value)] || String(option.value)} : badge, querySelectorAll: () => [badge]};
           });
-          const section = {querySelector: () => ({textContent:'Submissions'}), querySelectorAll: () => rows};
+          const section = {querySelector: () => ({textContent:config.statsLabel || 'Submissions'}), querySelectorAll: () => rows};
           menu = {visible:false, children:[section], getClientRects: () => menu.visible ? [{}] : []};
           menus.unshift(menu); // Порядок меню намеренно отличается от порядка чекбоксов.
           return input;
@@ -81,10 +93,10 @@ async function simulate(code, config = {}) {
       const historicalBadge = {textContent:'999',red:false};
       const historicalRow = {querySelector: selector => selector.includes('item-label')
         ? {textContent:'Исторический отсутствующий вариант'} : historicalBadge, querySelectorAll: () => [historicalBadge]};
-      const section = {querySelector: () => ({textContent: 'Submissions'}),
+      const section = {querySelector: () => ({textContent:config.statsLabel || 'Submissions'}),
         querySelectorAll: () => config.historical ? [historicalRow,row] : [row]};
       const hasNoAnswer = data.noAnswer && reloads < (config.failedReloads ?? 1);
-      const menu = {visible:false,textContent:hasNoAnswer?'No answer yet':data.label,
+      const menu = {visible:false,textContent:hasNoAnswer?(config.noAnswerLabel || 'No answer yet'):data.label,
         children:hasNoAnswer?[]:[section],getClientRects:()=>menu.visible?[{}]:[]};
       if (!config.noData) menus.push(menu);
       const icon = {getBoundingClientRect:()=>({x:0,y:0,width:16,height:16}),dispatchEvent:()=>{menu.visible=true;}};
@@ -291,5 +303,19 @@ async function simulate(code, config = {}) {
   assert.equal(reloadSet.state.report.length,2);
   assert.ok(reloadSet.checked.includes('0-0-0') && reloadSet.checked.includes('0-0-1') && reloadSet.checked.includes('0-0-3'));
   assert.ok(!reloadSet.checked.includes('0-0-2'));
+  const russianRadio = await simulate(source,{live:true,statsLabel:'Статистика'});
+  assert.equal(russianRadio.errors.length,0,'Русский пункт Статистика должен распознаваться');
+  assert.equal(russianRadio.selected.length,1);
+  const russianBoxes = await simulate(source,{live:true,statsLabel:'Статистика',
+    booleanLabels:{true:'Истина',false:'Ложь'},pages:[[{...checkboxData,questionType:'multichoiceset'}]]});
+  assert.equal(russianBoxes.errors.length,0,'Русские true/false должны распознаваться');
+  assert.equal(russianBoxes.state.report[0].selected,3);
+  assert.equal(russianBoxes.state.report[0].fallbacks,1);
+  const russianReload = await simulate(source,{live:true,statsLabel:'Статистика',noAnswerLabel:'Ответов пока нет',pages:[[
+    {label:'Сохранённый вариант',count:10},{label:'После восстановления',count:20,noAnswer:true}
+  ]]});
+  assert.equal(russianReload.errors.length,0,'Русский No answer yet должен запускать восстановление');
+  assert.equal(russianReload.reloads,1);
+  assert.equal(russianReload.state.report.length,2);
   console.log('Проверены: загрузка, восстановление после reload без потери радио/чекбоксов, предел перезагрузок, Старт, пауза, случайная задержка, Got it, исторические варианты, несколько ответов, красная пара и переходы.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

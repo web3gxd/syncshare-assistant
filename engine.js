@@ -105,6 +105,23 @@
   };
   const shadow = el => el && chrome.dom.openOrClosedShadowRoot(el);
   const text = value => (value || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+  // BEGIN SYNC SHARE LOCALE
+  function normalizeSyncShareLabel(value) {
+    return String(value || '').normalize('NFKC').replace(/\s+/g,' ').trim().toLowerCase().replace(/ё/g,'е');
+  }
+  function isStatisticsLabel(value) {
+    return ['submissions','statistics','статистика'].includes(normalizeSyncShareLabel(value));
+  }
+  function parseBooleanLabel(value) {
+    const label = normalizeSyncShareLabel(value);
+    if (['true','истина','истинно','истинный','верно','правда','да'].includes(label)) return true;
+    if (['false','ложь','ложно','ложный','неверно','неправда','нет'].includes(label)) return false;
+    return null;
+  }
+  function isNoAnswersText(value) {
+    return /(?:^|\s)(?:no answers? yet|пока нет ответ(?:а|ов)|ответ(?:а|ов) пока нет|еще нет ответ(?:а|ов)|ответ(?:а|ов) еще нет|нет ответ(?:а|ов)(?: пока)?)(?=$|\s|[.!…])/u.test(normalizeSyncShareLabel(value));
+  }
+  // END SYNC SHARE LOCALE
   const stopped = () => window.__syncShareStop || work.closed;
   window.__syncShareRunning = true;
   window.__syncShareStop = false;
@@ -215,7 +232,7 @@
     state.remaining = 0;
   };
   const visibleNoAnswer = doc => [...(shadow(doc.body)?.querySelectorAll('.syncshare-cm') || [])]
-    .some(menu => menu.getClientRects?.().length && /\bNo answers? yet\b/i.test(menu.textContent || ''));
+    .some(menu => menu.getClientRects?.().length && isNoAnswersText(menu.textContent));
   const capturePage = doc => ({
     page:doc.querySelector('input[name="thispage"]')?.value,
     controls:[...doc.querySelectorAll(QUESTION_SELECTOR)].flatMap(question =>
@@ -339,12 +356,12 @@
             .filter(menu => menu.getClientRects().length && work.getComputedStyle(menu).display !== 'none');
           if (menus.length !== 1) return false;
           const section = [...menus[0].children].find(el =>
-            text(el.querySelector(':scope > .item-label')?.textContent) === 'Submissions');
+            isStatisticsLabel(el.querySelector(':scope > .item-label')?.textContent));
           if (!section) return false;
           const rows = [...section.querySelectorAll(':scope > .sub-menu > .menu-item')].map(row => {
             const label = text(row.querySelector(':scope > .item-label')?.textContent).toLowerCase();
             const count = text(row.querySelector(':scope > .postfix > .content')?.textContent).replace(/\s/g,'');
-            return {value:label === 'true' ? true : label === 'false' ? false : null,
+            return {value:parseBooleanLabel(label),
               count:/^\d+$/.test(count) ? Number(count) : NaN, red:isRed(row)};
           });
           if (!rows.length || rows.some(row => row.value === null || !Number.isSafeInteger(row.count))) return false;
@@ -434,7 +451,7 @@
     const visible = menus.filter(menu => menu.getClientRects?.().length && work.getComputedStyle(menu).display !== 'none');
     const candidates = (visible.length === 1 ? visible : menus).map(menu => {
       const section = [...menu.children].find(el =>
-        text(el.querySelector(':scope > .item-label')?.textContent) === 'Submissions');
+        isStatisticsLabel(el.querySelector(':scope > .item-label')?.textContent));
       return [...(section?.querySelectorAll(':scope > .sub-menu > .menu-item') || [])]
         .map(row => {
           const label = text(row.querySelector(':scope > .item-label')?.textContent);
@@ -482,7 +499,7 @@
       } catch (error) {
         if (error.name !== 'SyncShareTimeout') throw error;
         if (visibleNoAnswer(doc)) await requestReload(doc,question);
-        if (attempt === 3) throw new Error('SyncShare не дал однозначной статистики за 3 попытки. Возможен No answer yet.');
+        if (attempt === 3) throw new Error('Статистика SyncShare не загрузилась или её формат не распознан за 3 попытки.');
         console.warn('Повтор чтения статистики:', attempt + 1, 'из 3');
         state.retries = (state.retries || 0) + 1;
         note('Повтор статистики ' + (attempt + 1) + '/3');
