@@ -1,6 +1,6 @@
 {
   "name": "syncshare-assistant",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "private": true,
   "description": "Расширение Chrome для управления SyncShare: панель, задержки и восстановление ответов.",
   "scripts": {

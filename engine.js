@@ -1,5 +1,5 @@
 (async function syncShareRun(startNow = false) {
-  const QUESTION_SELECTOR = '.que.multichoice,.que.multichoiceset';
+  const QUESTION_SELECTOR = '.que.multichoice,.que.multichoiceset,.que.truefalse';
   const DRY_RUN = false; // true: проверить текущую страницу без выбора ответов
   if (!window.chrome?.dom?.openOrClosedShadowRoot) {
     throw new Error('Chrome не предоставляет доступ к элементам SyncShare.');
@@ -214,8 +214,24 @@
     const [r, g, b] = rgba;
     return r > 180 && r > g + 12 && r > b + 12;
   });
-  const inputLabel = (input, doc) => text((input.getAttribute('aria-labelledby') || '').split(/\s+/)
-    .map(id => doc.getElementById(id)?.textContent || '').join(' '));
+  // BEGIN ANSWER LABELS
+  function answerLabelText(node) {
+    if (!node) return '';
+    if (typeof node.cloneNode !== 'function') return text(node.textContent);
+    const copy = node.cloneNode(true);
+    // Буквы a./b. — оформление Moodle, а не часть варианта в SyncShare.
+    copy.querySelectorAll('.answernumber,input,.accesshide,.sr-only,.visually-hidden').forEach(el => el.remove());
+    return text(copy.textContent);
+  }
+  function inputLabel(input, doc) {
+    const referenced = text((input.getAttribute('aria-labelledby') || '').split(/\s+/)
+      .map(id => answerLabelText(doc.getElementById(id))).join(' '));
+    if (referenced) return referenced;
+    const associated = text([...(input.labels || [])].map(answerLabelText).join(' '));
+    if (associated) return associated;
+    return text(input.getAttribute('aria-label')) || answerLabelText(doc.getElementById(input.id + '_label'));
+  }
+  // END ANSWER LABELS
   // BEGIN DELAY POLICY
   function sampleDelay(min, max, random = Math.random) {
     const low = Math.max(0.5, Math.min(30, Math.min(Number(min),Number(max))));
@@ -285,7 +301,7 @@
     if (work.document !== doc || classifyURL(work.location.href,initialURL) !== 'attempt') {
       throw new Error('Страница изменилась. Перезагрузка отменена.');
     }
-    if (doc.querySelector('.que:not(.multichoice):not(.multichoiceset) textarea,.que:not(.multichoice):not(.multichoiceset) select,.que:not(.multichoice):not(.multichoiceset) input:not([type="hidden"])')) {
+    if (doc.querySelector('.que:not(.multichoice):not(.multichoiceset):not(.truefalse) textarea,.que:not(.multichoice):not(.multichoiceset):not(.truefalse) select,.que:not(.multichoice):not(.multichoiceset):not(.truefalse) input:not([type="hidden"])')) {
       throw new Error('На странице есть неподдерживаемые поля. Автоперезагрузка отменена, чтобы не потерять ответы.');
     }
     const snapshot = capturePage(doc);
@@ -442,11 +458,7 @@
   };
   const choices = (question, doc) => {
     const inputs = [...question.querySelectorAll('.answer input[type="radio"]')];
-    const options = inputs.map(input => ({
-      input,
-      label: text((input.getAttribute('aria-labelledby') || '').split(/\s+/)
-        .map(id => doc.getElementById(id)?.textContent || '').join(' '))
-    }));
+    const options = inputs.map(input => ({input, label:inputLabel(input,doc)}));
     const menus = [...(shadow(doc.body)?.querySelectorAll('.syncshare-cm') || [])];
     const visible = menus.filter(menu => menu.getClientRects?.().length && work.getComputedStyle(menu).display !== 'none');
     const candidates = (visible.length === 1 ? visible : menus).map(menu => {

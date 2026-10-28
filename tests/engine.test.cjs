@@ -47,6 +47,22 @@ for (const value of ['No answer yet','No answers yet','Ответов пока �
 for (const value of ['Статистика 119','Ответов пока неточно 20','ответ найден']) assert.equal(locale.isNoAnswersText(value),false,value);
 console.log('Русские и английские подписи SyncShare: проверено.');
 
+const labelsBlock = source.match(/\/\/ BEGIN ANSWER LABELS([\s\S]*?)\/\/ END ANSWER LABELS/);
+assert.ok(labelsBlock);
+const labelHelpers = runInNewContext(labelsBlock[1]+'\n({inputLabel,answerLabelText})',{
+  text:value=>String(value || '').replace(/\s+/g,' ').trim()
+});
+const numberedLabel = {textContent:'b. Неверно',cloneNode(){
+  const copy={textContent:this.textContent,querySelectorAll(selector){
+    assert.ok(selector.includes('.answernumber'));
+    return [{remove(){copy.textContent='Неверно';}}];
+  }};return copy;
+}};
+assert.equal(labelHelpers.inputLabel({id:'x',getAttribute:()=>null,labels:[numberedLabel]},{getElementById:()=>null}),'Неверно');
+assert.equal(numberedLabel.textContent,'b. Неверно','Исходная подпись не изменяется');
+assert.equal(labelHelpers.inputLabel({id:'x',getAttribute:name=>name==='aria-label'?'Верно':null,labels:[]},{getElementById:()=>null}),'Верно');
+assert.equal(labelHelpers.inputLabel({id:'x',getAttribute:()=>null,labels:[]},{getElementById:id=>id==='x_label'?{textContent:'Неверно'}:null}),'Неверно');
+
 async function simulate(code, config = {}) {
   let now = 0, selected = [], opens = 0, submits = 0, dismissed = 0, pauseApplied = false, reloads = 0;
   const checkpoints = [];
@@ -82,11 +98,12 @@ async function simulate(code, config = {}) {
           querySelectorAll: () => inputs};
       }
       const input = {id,type:'radio', checked: false, disabled: false,
-        getAttribute: () => id+'-label',
+        getAttribute: name => config.labelSource === 'for' ? null : id+'-label',
         click() { this.checked = true; selected.push({time: now, page, index}); }};
+      if (config.labelSource === 'for') input.labels = [{textContent:data.label}];
       labels.set(id+'-label', {textContent: data.label + (config.changedLabelAfterReload && reloads ? ' (изменено)' : '')});
       controls.set(id,input);
-      const labelNode = {textContent: data.label};
+      const labelNode = {textContent: data.menuLabel || data.label};
       const badge = {textContent: String(data.count), red: !!data.red};
       const row = {querySelector: selector => selector.includes('item-label') ? labelNode : badge,
         querySelectorAll: () => [badge]};
@@ -164,7 +181,7 @@ async function simulate(code, config = {}) {
       error: (...args) => errors.push(args), table: () => {}}};
   await runInNewContext(code.replace('const DRY_RUN = false;', `const DRY_RUN = ${config.live ? 'false' : 'true'};`)
     .replace('startNow = false',config.ready?'startNow = false':'startNow = true'), context);
-  const checked = docs[current].querySelectorAll('.que.multichoice,.que.multichoiceset').flatMap(q=>q.querySelectorAll('.answer input'))
+  const checked = docs[current].querySelectorAll('.que.multichoice,.que.multichoiceset,.que.truefalse').flatMap(q=>q.querySelectorAll('.answer input'))
     .filter(input=>input.checked).map(input=>input.id);
   return {state: window.__syncShareController, selected, opens, submits, records, errors, notices, dismissed,reloads,checked,checkpoints};
 }
@@ -317,5 +334,18 @@ async function simulate(code, config = {}) {
   assert.equal(russianReload.errors.length,0,'Русский No answer yet должен запускать восстановление');
   assert.equal(russianReload.reloads,1);
   assert.equal(russianReload.state.report.length,2);
+  const standardLabel = await simulate(source,{live:true,labelSource:'for',pages:[[{label:'Неверно',count:1}]]});
+  assert.equal(standardLabel.errors.length,0,'Радиокнопка с обычным label должна распознаваться без aria-labelledby');
+  assert.equal(standardLabel.selected.length,1,'Один голос — достаточная статистика');
+  const trueFalseType = await simulate(source,{live:true,labelSource:'for',pages:[[{label:'Неверно',count:1,questionType:'truefalse'}]]});
+  assert.equal(trueFalseType.errors.length,0);
+  assert.equal(trueFalseType.state.report.length,1,'Тип truefalse нельзя пропускать');
+  const trueFalseReload = await simulate(source,{live:true,labelSource:'for',pages:[[
+    {label:'Неверно',count:1,questionType:'truefalse'},
+    {label:'После перезагрузки',count:2,noAnswer:true}
+  ]]});
+  assert.equal(trueFalseReload.errors.length,0);
+  assert.equal(trueFalseReload.reloads,1);
+  assert.ok(trueFalseReload.checked.includes('0-0'),'Ответ truefalse должен восстанавливаться');
   console.log('Проверены: загрузка, восстановление после reload без потери радио/чекбоксов, предел перезагрузок, Старт, пауза, случайная задержка, Got it, исторические варианты, несколько ответов, красная пара и переходы.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
